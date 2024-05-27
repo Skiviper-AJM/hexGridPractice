@@ -23,7 +23,12 @@ Music="*res://general/autoloads/music.tscn"
 
 [display]
 
+window/size/viewport_width=1728
+window/size/viewport_height=972
 window/size/mode=3
+window/size/window_width_override=1152
+window/size/window_height_override=648
+window/stretch/mode="canvas_items"
 
 [file_customization]
 
@@ -116,11 +121,13 @@ pause={
 3d_physics/layer_1="general"
 3d_physics/layer_2="interact"
 3d_physics/layer_3="trigger"
+3d_physics/layer_4="dialogue"
+3d_physics/layer_5="barriers"
+3d_physics/layer_6="fishing"
 
 [physics]
 
 3d/physics_engine="JoltPhysics3D"
-3d/default_gravity=0.0
 
 [rendering]
 

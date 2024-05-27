@@ -2,15 +2,42 @@
 extends Resource
 class_name Part
 
+signal partUpdated
+
+enum ItemTypes {
+	ALL,
+	PART,
+	UNIT,
+	FISH
+}
+
+enum PartTypes {
+	ARM,
+	LEG,
+	CHEST,
+	CORE,
+	HEAD
+}
+
+var itemType : ItemTypes = ItemTypes.PART
+
 @export var name : String = ""
-@export_enum("Arm", "Leg", "Chest", "Core", "Head") var type = 0
+@export var type:PartTypes = PartTypes.ARM :
+	get: return type;
+	set(value):
+		type = value
+		emit_signal("partUpdated")
+		
 var strType : Array = ["Arm", "Leg", "Chest", "Core", "Head"]
-@export var model : Mesh
-@export var icon : Texture2D
+@export var model : PackedScene :
+	get: return model;
+	set(value):
+		emit_signal("partUpdated")
+		model = value
 @export var cost : int = 0
 
 @export_subgroup("Flavour Text")
-@export_multiline var description : String = ""
+@export_multiline var description : String = " "
 
 @export_subgroup("Durability")
 @export_range(0, 10000) var maxDurability : int: 

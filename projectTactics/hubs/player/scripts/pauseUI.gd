@@ -1,11 +1,35 @@
 extends Control
 
-var freezeButtons : bool = false
+enum ItemTypes {
+	ALL,
+	PART,
+	UNIT,
+	FISH
+}
+
+enum Rarities {
+	COMMON,
+	UNCOMMON,
+	RARE,
+	EXOTIC,
+	LEGENDARY,
+	MYTHIC
+}
+
+var selectedItem
+var selectedItemType:ItemTypes = ItemTypes.ALL
+
+var spawnedItems:Array[Button] = []
 
 @export var playerInfo : PlayerData
 
 func _ready():
 	playerInfo = FM.playerData
+	
+	%allFilter.button_up.connect(setItemType.bind(ItemTypes.ALL))
+	%partsFilter.button_up.connect(setItemType.bind(ItemTypes.PART))
+	%unitsFilter.button_up.connect(setItemType.bind(ItemTypes.UNIT))
+	%fishFilter.button_up.connect(setItemType.bind(ItemTypes.FISH))
 
 func _input(event):
 	if Input.is_action_just_pressed("pause"): unpause();
@@ -16,7 +40,7 @@ func unpause():
 	await get_tree().process_frame
 	self.visible = false
 	%inventoryMenu.visible = false
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if !%dialogueMenu.visible and !%sellMenu.visible: Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED);
 
 func openInventory():
 	FM.saveGame()
@@ -26,20 +50,49 @@ func openInventory():
 	%inventoryMenu.visible = true
 	%saveMenu.visible = false
 	%settingsMenu.visible = false
-	%inventory.clear()
-	for item in playerInfo.inventory.values():
-		%inventory.add_item("x" + str(playerInfo.itemCounts[item]), item.icon)
+	refreshItems()
+
+func refreshItems():
+	for item in spawnedItems: item.queue_free();
+	spawnedItems.clear()
+	
+	var allItems:Array = playerInfo.inventory.keys()
+	var filteredItems:Array = []
+	if selectedItemType == ItemTypes.ALL: filteredItems = allItems;
+	else:
+		for item in allItems:
+			if item.itemType == selectedItemType:
+				filteredItems.append(item)
+	if not selectedItem in filteredItems:
+		clearDisplayedItem()
+		selectedItem = null
+	for item in filteredItems:
+		var newItem:Button = %itemTemplate.duplicate()
+		%itemGrid.add_child(newItem)
+		newItem.text = item.name
+		if playerInfo.inventory[item] > 1:
+			newItem.text += " (" + str(playerInfo.inventory[item]) + ")"
+		newItem.visible = true
+		newItem.button_up.connect(inventoryItemSelected.bind(item))
+		spawnedItems.append(newItem)
 
 func clearDisplayedItem():
+	selectedItem = null
 	%inventoryItemName.text = ""
-	%inventoryItemData.text = ""
+	%inventoryItemData.text = " "
 	%inventoryItemDescription.text = ""
 	%inventoryItemModel.visible = false
+	%inventoryItemMesh.mesh = null
+	for child in %inventoryItemModel.get_children():
+		if child != %inventoryItemMesh:
+			child.queue_free()
 	%inventoryDamageIcon.visible = false
 	%inventoryArmorIcon.visible = false
 	%inventorySpeedIcon.visible = false
 	%inventoryRangeIcon.visible = false
 	%inventorySplashIcon.visible = false
+	%itemTrashSpacer.visible = false
+	%deleteButton.visible = false
 
 func openSettings():
 	%inventoryMenu.visible = false
@@ -54,30 +107,81 @@ func openQuit():
 	%saveMenu.visible = true
 	%settingsMenu.visible = false
 
-func inventoryItemSelected(index):
+func inventoryItemSelected(item):
+	if item == selectedItem: return;
+	clearDisplayedItem()
 	%inventoryItemModel.visible = true
-	%inventoryItemModel.mesh = playerInfo.inventory[index].model
-	var modelAABB : Vector3 = playerInfo.inventory[index].model.get_aabb().size
-	var divideAmt : float = max(modelAABB.x, modelAABB.y, modelAABB.z)
-	%inventoryItemModel.scale = Vector3(0.8, 0.8, 0.8) / divideAmt
-	%inventoryItemName.text = playerInfo.inventory[index].name
-	%inventoryItemData.text = "[center][color=red]%s [color=white]-[color=blue] %s/%s" % [
-		playerInfo.inventory[index].strType[playerInfo.inventory[index].type],
-		str(playerInfo.inventory[index].currentDurability), 
-		str(playerInfo.inventory[index].maxDurability)
-	]
-	%inventoryItemDescription.text = "[center][i]" + playerInfo.inventory[index].description
-	
-	%inventoryDamageIcon.visible = true
-	%inventoryDamage.text = str(playerInfo.inventory[index].damage)
-	%inventoryArmorIcon.visible = true
-	%inventoryArmor.text = str(playerInfo.inventory[index].armorRating)
-	%inventorySpeedIcon.visible = true
-	%inventorySpeed.text = str(playerInfo.inventory[index].speedRating)
-	%inventoryRangeIcon.visible = true
-	%inventoryRange.text = str(playerInfo.inventory[index].range)
-	%inventorySplashIcon.visible = playerInfo.inventory[index].splash > 0
-	%inventorySplash.text = str(playerInfo.inventory[index].splash)
+	%inventoryItemModel.scale = Vector3(1.0, 1.0, 1.0)
+	var aabbSize:Vector3
+	match item.itemType:
+		ItemTypes.PART:
+			var newModel = item.model.instantiate()
+			%inventoryItemModel.add_child(newModel)
+			newModel.position = -(newModel.getAABB().position + newModel.getAABB().size / 2.0)
+			aabbSize = newModel.getAABB().size
+			var divideAmt : float = max(aabbSize.x, aabbSize.y, aabbSize.z)
+			%inventoryItemModel.scale = Vector3(0.8, 0.8, 0.8) / divideAmt
+		ItemTypes.UNIT:
+			var newModel = Node3D.new()
+			%inventoryItemModel.add_child(newModel)
+			newModel.set_script(load("res://combat/resources/unitAssembler.gd"))
+			newModel.unitParts = item
+			newModel.assembleUnit()
+			newModel.position = -(newModel.getAABB().position + newModel.getAABB().size / 2.0)
+			aabbSize = newModel.getAABB().size
+			var divideAmt : float = max(aabbSize.x, aabbSize.y, aabbSize.z)
+			%inventoryItemModel.scale = Vector3(0.5, 0.5, 0.5) / divideAmt
+		ItemTypes.FISH:
+			%inventoryItemMesh.mesh = item.model
+			aabbSize = item.model.get_aabb().size
+			var divideAmt : float = max(aabbSize.x, aabbSize.y, aabbSize.z)
+			%inventoryItemModel.scale = Vector3(0.8, 0.8, 0.8) / divideAmt
+	%inventoryItemName.text = item.name
+	if playerInfo.inventory[item] > 1:
+		%inventoryItemName.text += " (" + str(playerInfo.inventory[item]) + ")"
+		
+	%inventoryItemDescription.text = "[center][i] " + item.description
+	if item.itemType in [ItemTypes.PART, ItemTypes.UNIT]:
+		if item.itemType == ItemTypes.PART:
+			%inventoryItemData.text = "[center][color=red]%s [color=white]-[color=blue] %s/%s[color=white] - %s [img=12]placeholder/goldIcon.png[/img]" % [
+				item.strType[item.type],
+				str(item.currentDurability), 
+				str(item.maxDurability),
+				str(int(item.cost / 2.0))
+			]
+		%inventoryDamageIcon.visible = true
+		%inventoryDamage.text = str(item.damage)
+		%inventoryArmorIcon.visible = true
+		%inventoryArmor.text = str(item.armorRating)
+		%inventorySpeedIcon.visible = true
+		%inventorySpeed.text = str(item.speedRating)
+		%inventoryRangeIcon.visible = true
+		%inventoryRange.text = str(item.range)
+		%inventorySplashIcon.visible = item.splash > 0
+		%inventorySplash.text = str(item.splash)
+		%itemTrashSpacer.visible = true
+	elif item.itemType == ItemTypes.FISH:
+		var rarityText:String = ""
+		match item.rarity:
+			Rarities.COMMON:
+				rarityText = "Common"
+			Rarities.UNCOMMON:
+				rarityText = "[color=turquoise]Uncommon"
+			Rarities.RARE:
+				rarityText = "[color=tomato]Rare"
+			Rarities.EXOTIC:
+				rarityText = "[color=hotpink]Exotic"
+			Rarities.LEGENDARY:
+				rarityText = "[color=gold]Legendary"
+			Rarities.MYTHIC:
+				rarityText = "[color=purple]Mythic"
+		%inventoryItemData.text = "[center] %s [color=white] - %s [img=12]placeholder/goldIcon.png[/img]" % [
+			rarityText,
+			str(int(item.cost))
+		]
+			
+	%deleteButton.visible = true
+	selectedItem = item
 
 func saveGamePressed():
 	FM.saveGame()
@@ -93,3 +197,13 @@ func mainMenuPressed():
 
 func desktopPressed():
 	get_tree().quit()
+
+func deleteItemPressed():
+	playerInfo.inventory.erase(selectedItem)
+	clearDisplayedItem()
+	refreshItems()
+	FM.saveGame()
+
+func setItemType(type:ItemTypes):
+	selectedItemType = type
+	refreshItems()

@@ -1,5 +1,13 @@
 extends Node
 
+signal event(identifier:String, value)
+
+signal triggerDialogue(identifier)
+
+signal eventFinished
+
+var entranceName:String = ""
+
 func _ready():
 	self.process_mode = Node.PROCESS_MODE_ALWAYS
 
